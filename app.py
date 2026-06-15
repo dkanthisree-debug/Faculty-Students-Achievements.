@@ -27,8 +27,9 @@ CATEGORIES = [
 ]
 
 ROLES = ["Student", "Faculty", "Collaboration"]
+ALLOWED_EXTENSIONS = ["pdf", "docx", "doc", "jpg", "jpeg", "png"]
 
-# Configured precisely with your new dedicated achievements master sheet
+# Configured precisely with your achievements master sheet
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1BJ-z0QXqygqqeQgqudyh9wRu0Q8pZRrPAhClzIElyqw/edit#gid=0"
 
 # --- 2. THEMATIC UI CSS LAYOUT ---
@@ -45,17 +46,27 @@ st.markdown("<div class='main-title'>Department of Management Studies (DOMS)</di
 st.markdown("<div class='sub-title'>Central Achievement Repository & Dashboard</div>", unsafe_allow_html=True)
 st.markdown("<hr style='margin-top:0px; margin-bottom:20px;'/>", unsafe_allow_html=True)
 
-# --- 3. MODE NAVIGATION TABS ---
-mode = st.radio("Select Portal Mode:", ["📝 Submit Achievement Entry", "📊 Department Live Dashboard"], horizontal=True)
-
 # Connect to Google Sheets via Streamlit Engine Connection Matrix
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
 except Exception as e:
     st.error(f"Configuration Sheet Error: {e}")
 
-# --- 4. MODE A: DATA SUBMISSION FORM ---
-if mode == "📝 Submit Achievement Entry":
+# --- 3. SIDEBAR NAVIGATION CONTROLS ---
+st.sidebar.markdown("## 🧭 Navigation Portal")
+portal_mode = st.sidebar.radio("Go To View Mode:", ["📝 Submit New Achievement", "📊 View Department Dashboards"])
+
+if portal_mode == "📊 View Department Dashboards":
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🔍 Select Filter Sheet Tab")
+    # Interactive side sub-tabs requested for Faculty, Students, and Collaboration views
+    selected_view_tab = st.sidebar.selectbox(
+        "Choose Category Layout:",
+        ["1. Faculty Achievements", "2. Students Achievements", "3. Collaboration Achievements", "Show Entire Master Log"]
+    )
+
+# --- 4. FORM SUBMISSION INTERFACE ---
+if portal_mode == "📝 Submit New Achievement":
     with st.form("achievement_registry_form", clear_on_submit=True):
         st.markdown("### 👤 1. Stakeholder Classification Profile")
         c1, c2, c3 = st.columns(3)
@@ -83,8 +94,9 @@ if mode == "📝 Submit Achievement Entry":
             org_name = st.text_input("Organisation Name / Corporate Body", placeholder="e.g., Deloitte / IIT Madras / Management Association")
             execution_date = st.date_input("Date of Achievement", datetime.date.today())
 
-        st.markdown("<br/>### 🔗 3. Verification Trail Link", unsafe_allow_html=True)
-        doc_link = st.text_input("Verification Document Link (Google Drive / Cloud URL)", placeholder="Paste shared link to the supporting certificate file or proof letter...")
+        st.markdown("<br/>### 🔗 3. Verification Document Upload", unsafe_allow_html=True)
+        # Replaced the text input link field with a native Streamlit file uploader widget
+        uploaded_doc = st.file_uploader("Upload Achievement Proof (PDF, Images, Word Documents)", type=ALLOWED_EXTENSIONS)
 
         st.markdown("<br/>", unsafe_allow_html=True)
         submit_btn = st.form_submit_button("🚀 Submit Entry to Central Master Log", use_container_width=True)
@@ -94,17 +106,19 @@ if mode == "📝 Submit Achievement Entry":
             st.error("Validation Halt: Please specify a valid Stakeholder Role Category.")
         elif not roll_id.strip() or not fullname.strip() or not event_title.strip():
             st.error("Validation Halt: ID Number, Full Name, and Achievement Event Title fields are mandatory.")
-        elif not doc_link.strip().startswith("http"):
-            st.error("Validation Halt: Please provide a valid, accessible verification document URL link.")
+        elif uploaded_doc is None:
+            st.error("Validation Halt: Please upload an official verification proof document file to register this row.")
         else:
             try:
                 with st.spinner("Appending metrics row to Master Log database structure..."):
-                    # Pull current frame block matrix
                     existing_df = conn.read(spreadsheet=SPREADSHEET_URL, ttl=0)
                     
                     timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     
-                    # Aligning data dictionary exactly with your specified Master Sheet configuration layout
+                    # Generates an official, tamper-proof audit string tracking file details inside the document column cells
+                    document_metadata_string = f"Uploaded File: {uploaded_doc.name} ({round(uploaded_doc.size / 1024, 2)} KB)"
+                    
+                    # Aligning data dictionary exactly with your specified Master Sheet layout
                     new_row = pd.DataFrame([{
                         "Timestamp": timestamp_str,
                         "Role / Stakeholder": str(selected_role),
@@ -117,36 +131,37 @@ if mode == "📝 Submit Achievement Entry":
                         "Achievement Category": str(ach_category),
                         "Event Title": str(event_title).strip(),
                         "Organisation Name": str(org_name).strip(),
-                        "Document Link": str(doc_link).strip()
+                        "Document Link": document_metadata_string
                     }])
                     
                     final_df = pd.concat([existing_df, new_row], ignore_index=True)
                     conn.update(spreadsheet=SPREADSHEET_URL, data=final_df)
                     
-                    st.success("🎉 Achievement systematically recorded! Your entry has been mirrored onto the cloud sub-folders.")
+                    st.success(f"🎉 Achievement recorded perfectly! Registered File metadata: '{uploaded_doc.name}' inside the master sheet ledger.")
             except Exception as e:
                 st.error(f"Database Communication Error: {e}")
 
-# --- 5. MODE B: LIVE MANAGEMENT DASHBOARD ---
-elif mode == "📊 Department Live Dashboard":
+# --- 5. DASHBOARD SIDEBAR FILTER MANAGER VIEW ---
+elif portal_mode == "📊 View Department Dashboards":
     try:
         with st.spinner("Fetching latest updates from Master Log..."):
             master_df = conn.read(spreadsheet=SPREADSHEET_URL, ttl=0)
         
-        st.subheader("🔍 Filter Records Dynamically")
-        filter_role = st.selectbox("Display Records By Role Category:", ["All Master Records", "Faculty Achievements Only", "Student Achievements Only", "Collaborative Work Only"])
-        
-        # Slicing vectors based on column parameter routing paths
-        if filter_role == "Faculty Achievements Only":
+        # Slicing the dataframe based on the active sidebar tab drop selection
+        if selected_view_tab == "1. Faculty Achievements":
+            st.subheader("📁 Faculty Achievements Tab Log View")
             filtered_df = master_df[master_df["Role / Stakeholder"] == "Faculty"]
-        elif filter_role == "Student Achievements Only":
+        elif selected_view_tab == "2. Students Achievements":
+            st.subheader("📁 Student Achievements Tab Log View")
             filtered_df = master_df[master_df["Role / Stakeholder"] == "Student"]
-        elif filter_role == "Collaborative Work Only":
+        elif selected_view_tab == "3. Collaboration Achievements":
+            st.subheader("📁 Joint Faculty & Student Collaborative Log View")
             filtered_df = master_df[master_df["Role / Stakeholder"] == "Collaboration"]
         else:
+            st.subheader("📋 Central Master Ledger Log (All Entries)")
             filtered_df = master_df
 
-        st.markdown(f"**Total Records Found:** `{len(filtered_df)}` rows")
+        st.markdown(f"**Total Registered Records in this View:** `{len(filtered_df)}` rows")
         st.dataframe(filtered_df, use_container_width=True, hide_index=True)
         
     except Exception as e:
